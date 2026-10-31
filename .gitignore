@@ -1,0 +1,5 @@
+# Sorties de compilation Arduino
+esp32/**/build/
+
+# APK générés
+*.apk

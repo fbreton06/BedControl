@@ -1,0 +1,126 @@
+../esp32/BedCtrl/mqtt.h:27:    void* get_context(void) { return(this->context); }
+../esp32/BedCtrl/mqtt.h:28:    mqtt_on_message_callback get_callback(void) { return(this->on_message_callback); }
+../esp32/BedCtrl/bedctrl.cpp:149:    this->loop_time_ms = loop_time_ms;
+../esp32/BedCtrl/bedctrl.cpp:150:    this->setup_step = NO_CONFIG;
+../esp32/BedCtrl/bedctrl.cpp:153:    this->mqtt = mqtt_create(on_message, this);
+../esp32/BedCtrl/bedctrl.cpp:159:        this->prev_state[bed] = 0;
+../esp32/BedCtrl/bedctrl.cpp:161:        this->command[bed] = CMD_NONE;
+../esp32/BedCtrl/bedctrl.cpp:162:        this->head_pos[bed] = 0;
+../esp32/BedCtrl/bedctrl.cpp:163:        this->foot_pos[bed] = 0;
+../esp32/BedCtrl/bedctrl.cpp:164:        this->head_tgt[bed] = -1;
+../esp32/BedCtrl/bedctrl.cpp:165:        this->foot_tgt[bed] = -1;
+../esp32/BedCtrl/bedctrl.cpp:172:        this->light_tgt[bed] = -1;
+../esp32/BedCtrl/bedctrl.cpp:175:        this->leds[bed] = new Adafruit_NeoPixel(60, io_lights[bed][LIGHT_CMD], NEO_RGB + NEO_KHZ800);
+../esp32/BedCtrl/bedctrl.cpp:176:        this->leds[bed]->begin();
+../esp32/BedCtrl/bedctrl.cpp:177:        this->leds[bed]->show();
+../esp32/BedCtrl/bedctrl.cpp:183:    this->bed_mask = bed_mask;
+../esp32/BedCtrl/bedctrl.cpp:186:        if (this->bed_mask & BIT(bed) && state) {
+../esp32/BedCtrl/bedctrl.cpp:188:            if (this->light_tgt[bed] < 0) {
+../esp32/BedCtrl/bedctrl.cpp:191:                this->light_tgt[bed] = 5;
+../esp32/BedCtrl/bedctrl.cpp:193:            this->command[bed] |= CMD_LIGHT_SWITCH_ON;
+../esp32/BedCtrl/bedctrl.cpp:194:            Serial.println("BED" + String(bed) + ": light=" + String(this->light_tgt[bed]));
+../esp32/BedCtrl/bedctrl.cpp:198:            for(uint led = 0 ; led < this->leds[bed]->numPixels() ; led++) {
+../esp32/BedCtrl/bedctrl.cpp:200:                this->leds[bed]->setPixelColor(led, this->leds[bed]->Color(0, 0, 0));
+../esp32/BedCtrl/bedctrl.cpp:202:            this->leds[bed]->show();
+../esp32/BedCtrl/bedctrl.cpp:204:            this->light_tgt[bed] = -1;
+../esp32/BedCtrl/bedctrl.cpp:205:            this->command[bed] &= ~CMD_LIGHT_SWITCH_ON;
+../esp32/BedCtrl/bedctrl.cpp:212:    this->bed_mask |= BIT(bed);
+../esp32/BedCtrl/bedctrl.cpp:213:    this->command[bed] = (this->command[bed] & ~clear) | append;
+../esp32/BedCtrl/bedctrl.cpp:218:    this->bed_mask = bed_mask;
+../esp32/BedCtrl/bedctrl.cpp:221:        if (this->bed_mask & BIT(bed)) {
+../esp32/BedCtrl/bedctrl.cpp:223:            this->head_pos[bed] += 20;
+../esp32/BedCtrl/bedctrl.cpp:224:            this->foot_pos[bed] += 20;
+../esp32/BedCtrl/bedctrl.cpp:225:            this->set_target(bed, 0, 0);
+../esp32/BedCtrl/bedctrl.cpp:235:    if (this->head_pos[BED1] > this->head_pos[BED2]) {
+../esp32/BedCtrl/bedctrl.cpp:237:        head_tgt[BED2] = this->head_pos[BED1];
+../esp32/BedCtrl/bedctrl.cpp:238:    } else if (this->head_pos[BED1] < this->head_pos[BED2]) {
+../esp32/BedCtrl/bedctrl.cpp:240:        head_tgt[BED1] = this->head_pos[BED2];
+../esp32/BedCtrl/bedctrl.cpp:242:    if (this->foot_pos[BED1] > this->foot_pos[BED2]) {
+../esp32/BedCtrl/bedctrl.cpp:244:        foot_tgt[BED2] = this->foot_pos[BED1];
+../esp32/BedCtrl/bedctrl.cpp:245:    } else if (this->foot_pos[BED1] < this->foot_pos[BED2]) {
+../esp32/BedCtrl/bedctrl.cpp:247:        foot_tgt[BED1] = this->foot_pos[BED2];
+../esp32/BedCtrl/bedctrl.cpp:251:        this->set_target(bed, head_tgt[bed], foot_tgt[bed]);
+../esp32/BedCtrl/bedctrl.cpp:262:            switch (this->prev_state[bed]) {
+../esp32/BedCtrl/bedctrl.cpp:267:                    this->mqtt->publish(message, &sub_topic);
+../esp32/BedCtrl/bedctrl.cpp:272:                    message += String(this->head_pos[bed]) + ' ' + String(this->foot_pos[bed]);
+../esp32/BedCtrl/bedctrl.cpp:274:                    this->mqtt->publish(message, &sub_topic);
+../esp32/BedCtrl/bedctrl.cpp:277:            this->prev_state[bed] = 0;
+../esp32/BedCtrl/bedctrl.cpp:282:            this->prev_state[bed] = 1;
+../esp32/BedCtrl/bedctrl.cpp:287:            if (this->prev_state[bed] == 1) {
+../esp32/BedCtrl/bedctrl.cpp:289:                this->prev_state[bed] = 2;
+../esp32/BedCtrl/bedctrl.cpp:301:            this->head_tgt[bed] = head;
+../esp32/BedCtrl/bedctrl.cpp:302:            this->foot_tgt[bed] = foot;
+../esp32/BedCtrl/bedctrl.cpp:303:            this->command[bed] = CMD_SYNCH_TO_TARGET;
+../esp32/BedCtrl/bedctrl.cpp:312:    if (this->command[bed] & CMD_SYNCH_TO_TARGET) {
+../esp32/BedCtrl/bedctrl.cpp:314:        if (this->head_tgt[bed] >= 0) {
+../esp32/BedCtrl/bedctrl.cpp:316:            if (this->head_pos[bed] > this->head_tgt[bed]) {
+../esp32/BedCtrl/bedctrl.cpp:319:                this->head_pos[bed]--;
+../esp32/BedCtrl/bedctrl.cpp:320:                Serial.println("BED" + String(bed) + ": head=" + String(this->head_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:321:            } else if (this->head_pos[bed] < this->head_tgt[bed]) {
+../esp32/BedCtrl/bedctrl.cpp:324:                this->head_pos[bed]++;
+../esp32/BedCtrl/bedctrl.cpp:325:                Serial.println("BED" + String(bed) + ": head=" + String(this->head_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:330:                this->head_tgt[bed] = -1;
+../esp32/BedCtrl/bedctrl.cpp:333:        if (this->foot_tgt[bed] >= 0) {
+../esp32/BedCtrl/bedctrl.cpp:335:            if (this->foot_pos[bed] > this->foot_tgt[bed]) {
+../esp32/BedCtrl/bedctrl.cpp:338:                this->foot_pos[bed]--;
+../esp32/BedCtrl/bedctrl.cpp:339:                Serial.println("BED" + String(bed) + ": foot=" + String(this->foot_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:340:            } else if (this->foot_pos[bed] < this->foot_tgt[bed]) {
+../esp32/BedCtrl/bedctrl.cpp:343:                this->foot_pos[bed]++;
+../esp32/BedCtrl/bedctrl.cpp:344:                Serial.println("BED" + String(bed) + ": foot=" + String(this->foot_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:349:                this->foot_tgt[bed] = -1;
+../esp32/BedCtrl/bedctrl.cpp:352:        if ((this->head_tgt[bed] < 0) && (this->foot_tgt[bed] < 0)) {
+../esp32/BedCtrl/bedctrl.cpp:354:            this->command[bed] &= ~CMD_SYNCH_TO_TARGET;
+../esp32/BedCtrl/bedctrl.cpp:355:            Serial.println("BED" + String(bed) + ": SYNCH done: head=" + String(this->head_pos[bed]) + ", foot=" + String(this->foot_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:360:        uint max = (20000 / this->loop_time_ms);
+../esp32/BedCtrl/bedctrl.cpp:361:        if (this->command[bed] & CMD_START_HEAD_UP) {
+../esp32/BedCtrl/bedctrl.cpp:363:            if (this->head_pos[bed] < max) {
+../esp32/BedCtrl/bedctrl.cpp:366:                this->head_pos[bed]++;
+../esp32/BedCtrl/bedctrl.cpp:368:            Serial.println("BED" + String(bed) + ": head=" + String(this->head_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:369:        } else if (this->command[bed] & CMD_STOP_HEAD_UP) {
+../esp32/BedCtrl/bedctrl.cpp:372:            this->command[bed] &= ~CMD_STOP_HEAD_UP;
+../esp32/BedCtrl/bedctrl.cpp:376:        if (this->command[bed] & CMD_START_HEAD_DOWN) {
+../esp32/BedCtrl/bedctrl.cpp:378:            if (this->head_pos[bed] > 0) {
+../esp32/BedCtrl/bedctrl.cpp:381:                this->head_pos[bed]--;
+../esp32/BedCtrl/bedctrl.cpp:383:            Serial.println("BED" + String(bed) + ": head=" + String(this->head_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:384:        } else if (this->command[bed] & CMD_STOP_HEAD_DOWN) {
+../esp32/BedCtrl/bedctrl.cpp:387:            this->command[bed] &= ~CMD_STOP_HEAD_DOWN;
+../esp32/BedCtrl/bedctrl.cpp:391:        if (this->command[bed] & CMD_START_FOOT_UP) {
+../esp32/BedCtrl/bedctrl.cpp:393:            if (this->foot_pos[bed] < max) {
+../esp32/BedCtrl/bedctrl.cpp:396:                this->foot_pos[bed]++;
+../esp32/BedCtrl/bedctrl.cpp:398:            Serial.println("BED" + String(bed) + ": foot=" + String(this->foot_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:399:        } else if (this->command[bed] & CMD_STOP_FOOT_UP) {
+../esp32/BedCtrl/bedctrl.cpp:402:            this->command[bed] &= ~CMD_STOP_FOOT_UP;
+../esp32/BedCtrl/bedctrl.cpp:406:        if (this->command[bed] & CMD_START_FOOT_DOWN) {
+../esp32/BedCtrl/bedctrl.cpp:408:            if (this->foot_pos[bed] > 0) {
+../esp32/BedCtrl/bedctrl.cpp:411:                this->foot_pos[bed]--;
+../esp32/BedCtrl/bedctrl.cpp:413:            Serial.println("BED" + String(bed) + ": foot=" + String(this->foot_pos[bed]));
+../esp32/BedCtrl/bedctrl.cpp:414:        } else if (this->command[bed] & CMD_STOP_FOOT_DOWN) {
+../esp32/BedCtrl/bedctrl.cpp:417:            this->command[bed] &= ~CMD_STOP_FOOT_DOWN;
+../esp32/BedCtrl/bedctrl.cpp:421:        if (this->command[bed] & CMD_LIGHT_SWITCH_ON) {
+../esp32/BedCtrl/bedctrl.cpp:423:            if (this->light_tgt[bed] > 0) {
+../esp32/BedCtrl/bedctrl.cpp:425:                this->light_tgt[bed]--;
+../esp32/BedCtrl/bedctrl.cpp:426:                Serial.println("BED" + String(bed) + ": light=" + String(this->light_tgt[bed]));
+../esp32/BedCtrl/bedctrl.cpp:427:            } else if (!this->light_tgt[bed]) {
+../esp32/BedCtrl/bedctrl.cpp:430:                for(uint led = 0 ; led < this->leds[bed]->numPixels() ; led++) {
+../esp32/BedCtrl/bedctrl.cpp:432:                    this->leds[bed]->setPixelColor(led, this->leds[bed]->Color(255, 255, 255));
+../esp32/BedCtrl/bedctrl.cpp:434:                this->leds[bed]->show();
+../esp32/BedCtrl/bedctrl.cpp:435:                this->command[bed] &= ~CMD_LIGHT_SWITCH_ON;
+../esp32/BedCtrl/bedctrl.cpp:449:                this->setup_count = uint(SETUP_MAX_MS / this->loop_time_ms);
+../esp32/BedCtrl/bedctrl.cpp:455:                this->setup_count--;
+../esp32/BedCtrl/bedctrl.cpp:456:                if (!this->setup_count) {
+../esp32/BedCtrl/bedctrl.cpp:469:            this->do_command(bed);
+../esp32/BedCtrl/bedctrl.cpp:472:        this->mqtt->loop();
+../esp32/BedCtrl/mqtt.cpp:29:    this->on_message_callback = on_message_callback;
+../esp32/BedCtrl/mqtt.cpp:30:    this->context = context;
+../esp32/BedCtrl/mqtt.cpp:31:    this->wifi_client = new WiFiClient();
+../esp32/BedCtrl/mqtt.cpp:32:    this->mqtt = new MQTTClient();
+../esp32/BedCtrl/mqtt.cpp:34:    this->mqtt->begin(g_config.mqtt_host.c_str(), g_config.mqtt_port, *this->wifi_client);
+../esp32/BedCtrl/mqtt.cpp:35:    this->mqtt->onMessage(on_message);
+../esp32/BedCtrl/mqtt.cpp:53:    if (!this->mqtt->connected()) {
+../esp32/BedCtrl/mqtt.cpp:56:        if (this->mqtt->connect(g_config.hostname.c_str(), g_config.mqtt_user.c_str(), g_config.mqtt_pass.c_str())) {
+../esp32/BedCtrl/mqtt.cpp:60:                this->mqtt->subscribe(g_config.hostname + "/#");
+../esp32/BedCtrl/mqtt.cpp:65:    return this->mqtt->connected();
+../esp32/BedCtrl/mqtt.cpp:71:    if (this->check_connection() &&  (g_config.mqtt_topic != "")) {
+../esp32/BedCtrl/mqtt.cpp:78:        this->mqtt->publish(topic, message.c_str());
+../esp32/BedCtrl/mqtt.cpp:92:    this->mqtt->loop();
+../esp32/BedCtrl/mqtt.cpp:93:    this->check_connection();

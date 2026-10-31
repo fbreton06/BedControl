@@ -1,9 +1,10 @@
 #ifndef __RADIAT__
 #define __RADIAT__
 
+#include <Adafruit_NeoPixel.h>
+#include <ArduinoJson.h>
 #include "globals.h"
 #include "mqtt.h"
-#include <Adafruit_NeoPixel.h>
 
 // Do not use GPIO 1&3 (used bu serial monitor: trace debug)
 #define IO_PIN_BED1_LIGHT_CMD       25
@@ -28,7 +29,7 @@
 
 #define BED1        0 // Right
 #define BED2        1 // Left
-#define NB_BEDS     2
+// NB_BEDS is defined in globals.h (shared with DeviceConfig)
 
 #define LIGHT_PWR    0
 #define LIGHT_CMD    1
@@ -64,21 +65,20 @@ private:
     uint command[NB_BEDS];      // Bit array of current commands ongoing: default is CMD_NONE
     uint head_pos[NB_BEDS];     // Current head position: counter of "loop_time_ms"
     uint foot_pos[NB_BEDS];     // Current head position: counter of "loop_time_ms"
-    uint prev_state[NB_BEDS];   // Used to managed "long press" button sequence
     int head_tgt[NB_BEDS];      // -1: means target reached
     int foot_tgt[NB_BEDS];      // -1: means target reached
     int light_tgt[NB_BEDS];     // -1: means target reached
-    byte bed_mask;              // Bit array of current beds managed by the application
 
 private:
     void do_command(uint bed);
 
 public:
-    void set_light(byte bed_mask, bool state);
+    void set_light(byte bed_mask); // toggle light on/off per bed
     void add_cmd(byte byte, uint append, uint clear);
     void reset(byte bed_mask);
     void synch(void);
-    void memory(byte bed, uint unit, uint state);
+    bool stop_synch(byte bed_mask); // abort an in-progress reset/synch; true if anything stopped
+    void memory(byte bed, uint unit, bool is_long);
     void set_target(byte bed, int head, int foot);
     void loop(void);
 };

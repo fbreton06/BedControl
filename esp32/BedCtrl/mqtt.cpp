@@ -1,11 +1,10 @@
 #include "mqtt.h"
 
-
 static Mqtt* mqtt;
 
 static void on_message(String &topic, String &message) {
 
-    String sub_topic = mqtt->get_sub_topic(topic);
+    String sub_topic = mqtt->get_topic(topic);
     #if DEBUG_TRACE
     Serial.print("MQTT RX(");
     Serial.print(sub_topic);
@@ -31,25 +30,20 @@ Mqtt::Mqtt(mqtt_on_message_callback on_message_callback, void* context) {
     this->context = context;
     this->wifi_client = new WiFiClient();
     this->mqtt = new MQTTClient();
-    this->pub_topic = String(MQTT_PUB_TOPIC);
-    this->sub_topic = String(MQTT_SUB_TOPIC);
-    this->username = String(MQTT_USERNAME);
-    this->password = String(MQTT_PASSWORD);
-    this->broker_address = String(MQTT_BROKER_ADDRESS);
     // Initialisation du MQTT
-    this->mqtt->begin(this->broker_address.c_str(), *this->wifi_client);
+    this->mqtt->begin(g_config.mqtt_host.c_str(), g_config.mqtt_port, *this->wifi_client);
     this->mqtt->onMessage(on_message);
 }
 
-String Mqtt::get_sub_topic(String topic) {
+String Mqtt::get_topic(String topic) {
 
     String result = "#";
-    if (topic == this->sub_topic) {
+    if (topic == g_config.hostname) {
 
         result = "";
-    } else if (topic.startsWith(this->sub_topic + "/")) {
+    } else if (topic.startsWith(g_config.hostname + "/")) {
 
-        result = topic.substring(this->sub_topic.length() + 1, topic.length()) ;
+        result = topic.substring(g_config.hostname.length() + 1, topic.length()) ;
     }
     return result;
 }
@@ -59,12 +53,11 @@ bool Mqtt::check_connection(void) {
     if (!this->mqtt->connected()) {
 
         // Broker connection (or reconnection)
-        const char connect_id[] = MQTT_ID;
-        if (this->mqtt->connect(connect_id, this->username.c_str(), this->password.c_str())) {
+        if (this->mqtt->connect(g_config.hostname.c_str(), g_config.mqtt_user.c_str(), g_config.mqtt_pass.c_str())) {
 
-            if (this->sub_topic != "") {
+            if (g_config.hostname != "") {
                 
-                this->mqtt->subscribe(this->sub_topic + "/#");
+                this->mqtt->subscribe(g_config.hostname + "/#");
             }
             Serial.println("MQTT connected");
         }
@@ -75,9 +68,9 @@ bool Mqtt::check_connection(void) {
 bool Mqtt::publish(String& message, String* sub_topic) {
 
     bool done = false;
-    if (this->check_connection() &&  (this->pub_topic != "")) {
+    if (this->check_connection() &&  (g_config.mqtt_topic != "")) {
 
-        String topic = this->pub_topic;
+        String topic = g_config.mqtt_topic;
         if (sub_topic && *sub_topic) {
 
             topic += '/' + *sub_topic;

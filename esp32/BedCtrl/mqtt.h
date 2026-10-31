@@ -5,6 +5,7 @@
 #include <MQTT.h>
 #include "globals.h"
 
+
 typedef void (*mqtt_on_message_callback)(void* context, String& sub_topic, String& message);
 
 class Mqtt {
@@ -16,11 +17,6 @@ public:
 private:
     WiFiClient* wifi_client;
     MQTTClient* mqtt;
-    String sub_topic;
-    String pub_topic;
-    String username;
-    String password;
-    String broker_address;
     mqtt_on_message_callback on_message_callback;
     void* context;
 
@@ -30,7 +26,8 @@ private:
 public:
     void* get_context(void) { return(this->context); }
     mqtt_on_message_callback get_callback(void) { return(this->on_message_callback); }
-    String get_sub_topic(String topic);
+    bool check_topic(String topic) { return(topic == g_config.hostname); }
+    String get_topic(String topic);
     bool publish(String& message, String* sub_topic=NULL);
     void loop(void);
 };

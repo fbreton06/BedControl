@@ -1,105 +1,148 @@
 #include "bedctrl.h"
 
-#define CMD_NONE            0
-#define CMD_START_HEAD_UP   BIT(0)
-#define CMD_STOP_HEAD_UP    BIT(1)
-#define CMD_START_HEAD_DOWN BIT(2)
-#define CMD_STOP_HEAD_DOWN  BIT(3)
-#define CMD_START_FOOT_UP   BIT(4)
-#define CMD_STOP_FOOT_UP    BIT(5)
-#define CMD_START_FOOT_DOWN BIT(6)
-#define CMD_STOP_FOOT_DOWN  BIT(7)
-#define CMD_SYNCH_TO_TARGET BIT(8)
-#define CMD_LIGHT_SWITCH_ON BIT(9)
-
+#define CMD_NONE             0
+#define CMD_START_HEAD_UP    BIT(0)
+#define CMD_STOP_HEAD_UP     BIT(1)
+#define CMD_START_HEAD_DOWN  BIT(2)
+#define CMD_STOP_HEAD_DOWN   BIT(3)
+#define CMD_START_FOOT_UP    BIT(4)
+#define CMD_STOP_FOOT_UP     BIT(5)
+#define CMD_START_FOOT_DOWN  BIT(6)
+#define CMD_STOP_FOOT_DOWN   BIT(7)
+#define CMD_SYNCH_TO_TARGET  BIT(8)
+#define CMD_LIGHT_SWITCH_ON  BIT(9)
 
 static void on_message(void* context, String& sub_topic, String& message) {
 
+    JsonDocument document;
+    DeserializationError error = deserializeJson(document, message);
+    if (error) {
+
+        Serial.println("MQTT unexpected message: " + message);
+        Serial.println(error.f_str());
+        return;
+    }
+    if (!(document.containsKey("source") && document.containsKey("beds") &&
+          document.containsKey("parts") && document.containsKey("push"))) {
+
+        Serial.println("MQTT unsupported message: " + message);
+        return;
+    }
+
     BedCtrl* bedctrl = (BedCtrl *)context;
-    int value = message.toInt();
-    if (sub_topic == "bed_pos_1") {
+    String source = document["source"];
+    String push = document["push"];
+    Serial.println("MQTT message: " + message);
+    byte bed_mask = 0;
+    if ((document["beds"] == "left") || (document["beds"] == "both")) {
 
-        bedctrl->set_target(BED1, (value >> 16) & 0xFFFF, value & 0xFFFF);
-    } else if (sub_topic == "bed_pos_2") {
+        bed_mask |= BED2_MASK; // BED2 = Left
+    }
+    if ((document["beds"] == "right") || (document["beds"] == "both")) {
 
-        bedctrl->set_target(BED2, (value >> 16) & 0xFFFF, value & 0xFFFF);
+        bed_mask |= BED1_MASK; // BED1 = Right
+    }
+
+    // A press on up/down/flat/same while a reset(flat) or synch(same) is in
+    // progress stops it; the press is then consumed (no new motion started).
+    if ((push == "on") &&
+        (source == "up" || source == "down" || source == "flat" || source == "same")) {
+
+        byte stop_mask = (source == "same") ? (byte)(BED1_MASK | BED2_MASK) : bed_mask;
+        if (bedctrl->stop_synch(stop_mask)) {
+
+            return;
+        }
+    }
+
+    if (source == "same") {
+
+        if (push == "on") {
+
+            bedctrl->synch();
+        }
     } else {
 
-        uint state = value % 10;
-        if (sub_topic == "synch") {
+        if (source == "flat") {
 
-            if (state) {
+            if (push == "on") {
 
-                bedctrl->synch();
+                bedctrl->reset(bed_mask);
+            }
+        } else if (source == "light") {
+
+            // Toggle once per tap: act on the press only, ignore the release.
+            if (push == "on") {
+
+                bedctrl->set_light(bed_mask);
             }
         } else {
 
-            byte bed_mask = (value >> 1) & (BIT(NB_BEDS) - 1);
-            if (sub_topic == "reset") {
+            for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
-                if (state) {
+                if (bed_mask & BIT(bed)) {
 
-                    bedctrl->reset(bed_mask);
-                }            
-            } else if (sub_topic == "light") {
+                    if (source == "up") {
 
-                bedctrl->set_light(bed_mask, state != 0);
-            } else {
+                        if ((document["parts"] == "head") || (document["parts"] == "both")) {
 
-                for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
-
-                    if (bed_mask & BIT(bed)) {
-
-                        if (sub_topic == "memory1") {
-
-                            bedctrl->memory(bed, 1, state);
-                        } else if (sub_topic == "memory2") {
-
-                            bedctrl->memory(bed, 2, state);
-                        } else if (sub_topic == "headup") {
-
-                            if (state) {
+                            if (push == "on") {
 
                                 Serial.println("BED" + String(bed) + ": HEAD UP started...");
                                 bedctrl->add_cmd(bed, CMD_START_HEAD_UP, CMD_START_HEAD_DOWN);
+
                             } else {
 
                                 bedctrl->add_cmd(bed, CMD_STOP_HEAD_UP, CMD_START_HEAD_UP);
                             }
-                        } else if (sub_topic == "footup") {
+                        }
+                        if ((document["parts"] == "leg") || (document["parts"] == "both")) {
 
-                            if (state) {
+                            if (push == "on") {
 
                                 Serial.println("BED" + String(bed) + ": FOOT UP started...");
                                 bedctrl->add_cmd(bed, CMD_START_FOOT_UP, CMD_START_FOOT_DOWN);
+
                             } else {
 
                                 bedctrl->add_cmd(bed, CMD_STOP_FOOT_UP, CMD_START_FOOT_UP);
                             }
-                        } else if (sub_topic == "headdown") {
+                        }
+                    } else if (source == "down") {
 
-                            if (state) {
+                        if ((document["parts"] == "head") || (document["parts"] == "both")) {
+
+                            if (push == "on") {
 
                                 Serial.println("BED" + String(bed) + ": HEAD DOWN started...");
                                 bedctrl->add_cmd(bed, CMD_START_HEAD_DOWN, CMD_START_HEAD_UP);
+
                             } else {
 
                                 bedctrl->add_cmd(bed, CMD_STOP_HEAD_DOWN, CMD_START_HEAD_DOWN);
                             }
-                        } else if (sub_topic == "footdown") {
+                        }
+                        if ((document["parts"] == "leg") || (document["parts"] == "both")) {
 
-                            if (state) {
+                            if (push == "on") {
 
                                 Serial.println("BED" + String(bed) + ": FOOT DOWN started...");
                                 bedctrl->add_cmd(bed, CMD_START_FOOT_DOWN, CMD_START_FOOT_UP);
+
                             } else {
 
                                 bedctrl->add_cmd(bed, CMD_STOP_FOOT_DOWN, CMD_START_FOOT_DOWN);
                             }
-                        } else {
-
-                            Serial.println("MQTT unsupported sub topic: " + sub_topic);
                         }
+                    } else if (source == "m1") {
+
+                        bedctrl->memory(bed, 1, push == "long");
+                    } else if (source == "m2") {
+
+                        bedctrl->memory(bed, 2, push == "long");
+                    } else {
+
+                        Serial.println("MQTT unsupported source: " + source);
                     }
                 }
             }
@@ -109,11 +152,22 @@ static void on_message(void* context, String& sub_topic, String& message) {
 
 BedCtrl::BedCtrl(uint loop_time_ms) {
 
+    if (wifi_setup()) {
+
+        Serial.println("[Setup] AP mode — waiting for WiFi config");
+    } else {
+
+        Serial.println("[Setup] BedCtrl — working...");
+    }
+
     this->loop_time_ms = loop_time_ms;
+
+    // MQTT
+    this->mqtt = mqtt_create(on_message, this);
+
+    // App. init.
     for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
-        // Memory buttonS
-        this->prev_state[bed] = 0;
         // MOTORS
         this->command[bed] = CMD_NONE;
         this->head_pos[bed] = 0;
@@ -133,50 +187,50 @@ BedCtrl::BedCtrl(uint loop_time_ms) {
         this->leds[bed]->begin();
         this->leds[bed]->show();
     }
-    this->mqtt = mqtt_create(on_message, this);
 }
 
-void BedCtrl::set_light(byte bed_mask, bool state)  {
+void BedCtrl::set_light(byte bed_mask)  {
 
-    this->bed_mask = bed_mask;
+    // Toggle: turn the light ON if it is currently OFF, OFF if it is ON.
+    // light_tgt[bed] < 0 means OFF; >= 0 means ON or powering up.
     for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
-        if (this->bed_mask & BIT(bed) && state) {
+        if (bed_mask & BIT(bed)) {
 
             if (this->light_tgt[bed] < 0) {
 
+                // OFF → ON : step 1 power on now, step 2 LEDs after light_delay cycles
                 digitalWrite(io_lights[bed][LIGHT_PWR], LOW);
-                this->light_tgt[bed] = 5;
-            }
-            this->command[bed] |= CMD_LIGHT_SWITCH_ON;
-            Serial.println("BED" + String(bed) + ": light=" + String(this->light_tgt[bed]));
-        } else {
+                this->light_tgt[bed] = g_config.light_delay;
+                this->command[bed] |= CMD_LIGHT_SWITCH_ON;
+                Serial.println("BED" + String(bed) + ": light powering on, delay=" + String(this->light_tgt[bed]));
+            } else {
 
-            Serial.println("BED" + String(bed) + ": light=OFF");
-            for(uint led = 0 ; led < this->leds[bed]->numPixels() ; led++) {
+                // ON (or powering up) → OFF
+                Serial.println("BED" + String(bed) + ": light=OFF");
+                for(uint led = 0 ; led < this->leds[bed]->numPixels() ; led++) {
 
-                this->leds[bed]->setPixelColor(led, this->leds[bed]->Color(0, 0, 0));
+                    this->leds[bed]->setPixelColor(led, this->leds[bed]->Color(0, 0, 0));
+                }
+                this->leds[bed]->show();
+                digitalWrite(io_lights[bed][LIGHT_PWR], HIGH);
+                this->light_tgt[bed] = -1;
+                this->command[bed] &= ~CMD_LIGHT_SWITCH_ON;
             }
-            this->leds[bed]->show();
-            digitalWrite(io_lights[bed][LIGHT_PWR], HIGH);
-            this->light_tgt[bed] = -1;
-            this->command[bed] &= ~CMD_LIGHT_SWITCH_ON;
         }
     }
 }
 
 void BedCtrl::add_cmd(byte bed, uint append, uint clear) {
 
-    this->bed_mask |= BIT(bed);
     this->command[bed] = (this->command[bed] & ~clear) | append;
 }
 
 void BedCtrl::reset(byte bed_mask) {
 
-    this->bed_mask = bed_mask;
     for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
-        if (this->bed_mask & BIT(bed)) {
+        if (bed_mask & BIT(bed)) {
 
             this->head_pos[bed] += 20;
             this->foot_pos[bed] += 20;
@@ -187,26 +241,22 @@ void BedCtrl::reset(byte bed_mask) {
 
 void BedCtrl::synch(void) {
 
-    int head_tgt[NB_BEDS];
-    int foot_tgt[NB_BEDS];
-    for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
-
-        head_tgt[bed] = -1;
-        foot_tgt[bed] = -1;
-    }
+    // -1 = no move for that bed; the bed that is behind catches up to the other
+    int head_tgt[NB_BEDS] = { -1, -1 };
+    int foot_tgt[NB_BEDS] = { -1, -1 };
     if (this->head_pos[BED1] > this->head_pos[BED2]) {
 
-        head_tgt[BED2] = head_tgt[BED1];
+        head_tgt[BED2] = this->head_pos[BED1];
     } else if (this->head_pos[BED1] < this->head_pos[BED2]) {
 
-        head_tgt[BED1] = head_tgt[BED2];
+        head_tgt[BED1] = this->head_pos[BED2];
     }
     if (this->foot_pos[BED1] > this->foot_pos[BED2]) {
 
-        foot_tgt[BED2] = foot_tgt[BED1];
+        foot_tgt[BED2] = this->foot_pos[BED1];
     } else if (this->foot_pos[BED1] < this->foot_pos[BED2]) {
 
-        foot_tgt[BED1] = foot_tgt[BED2];
+        foot_tgt[BED1] = this->foot_pos[BED2];
     }
     for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
@@ -214,41 +264,47 @@ void BedCtrl::synch(void) {
     }
 }
 
-void BedCtrl::memory(byte bed, uint unit, uint state) {
+bool BedCtrl::stop_synch(byte bed_mask) {
 
-    String sub_topic;
-    String message = "";
-    switch (state) {
+    bool stopped = false;
+    for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
-        case 0:
-            switch (this->prev_state[bed]) {
+        if ((bed_mask & BIT(bed)) && (this->command[bed] & CMD_SYNCH_TO_TARGET)) {
 
-                case 1: // Memory button short pressed
-                    sub_topic = "restore" + String(unit) + String(bed);
-                    Serial.println("BED" + String(bed) + ": short press M" + String(unit));
-                    this->mqtt->publish(message, &sub_topic);
-                    break;
+            // Stop all motors and cancel the pending target for this bed
+            for (uint idx = 0 ; idx < NB_IO_PINS ; idx++) {
 
-                case 2: // Memory button long pressed
-                    sub_topic = "store" + String(unit) + String(bed);
-                    message += String(this->head_pos[bed]) + ' ' + String(this->foot_pos[bed]);
-                    Serial.println("BED" + String(bed) + ": long press M" + String(unit) + " => store: " + message);
-                    this->mqtt->publish(message, &sub_topic);
-                    break;
+                digitalWrite(io_pins[bed][idx], HIGH);
             }
-            this->prev_state[bed] = 0;
-            break;
+            this->command[bed] &= ~CMD_SYNCH_TO_TARGET;
+            this->head_tgt[bed] = -1;
+            this->foot_tgt[bed] = -1;
+            Serial.println("BED" + String(bed) + ": reset/synch stopped by button");
+            stopped = true;
+        }
+    }
+    return stopped;
+}
 
-        case 1:
-            this->prev_state[bed] = 1;
-            break;
+void BedCtrl::memory(byte bed, uint unit, bool is_long) {
 
-        case 2:
-            if (this->prev_state[bed] == 1) {
+    uint slot = unit - 1;
+    if (is_long) {
 
-                this->prev_state[bed] = 2;
-            }
-            break;
+        // Long press → store current position into persistent memory (NVS)
+        g_config.mem_head[slot][bed] = this->head_pos[bed];
+        g_config.mem_foot[slot][bed] = this->foot_pos[bed];
+        config_save();
+        Serial.println("BED" + String(bed) + ": store M" + String(unit) +
+                       " => head=" + String(this->head_pos[bed]) +
+                       ", foot=" + String(this->foot_pos[bed]));
+    } else {
+
+        // Short press → move bed to the stored memory position
+        this->set_target(bed, g_config.mem_head[slot][bed], g_config.mem_foot[slot][bed]);
+        Serial.println("BED" + String(bed) + ": restore M" + String(unit) +
+                       " => head=" + String(g_config.mem_head[slot][bed]) +
+                       ", foot=" + String(g_config.mem_foot[slot][bed]));
     }
 }
 
@@ -400,9 +456,13 @@ void BedCtrl::do_command(uint bed) {
 
 void BedCtrl::loop(void) {
 
-    this->mqtt->loop();
-    for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
+    // wifi_loop() returns true in STA mode (app runs), false in AP mode (paused).
+    if (wifi_loop()) {
 
-        this->do_command(bed);
+        for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
+
+            this->do_command(bed);
+        }
+        this->mqtt->loop();
     }
 }
