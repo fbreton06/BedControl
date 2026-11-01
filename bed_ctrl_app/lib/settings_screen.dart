@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
+import 'device_scan_screen.dart';
+import 'module_config_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -10,57 +12,39 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late TextEditingController _hostCtrl;
-  late TextEditingController _portCtrl;
-  late TextEditingController _clientIdCtrl;
-  late TextEditingController _userCtrl;
-  late TextEditingController _passCtrl;
   late TextEditingController _longPressCtrl;
-  bool _obscurePass = true;
 
   @override
   void initState() {
     super.initState();
     final state = context.read<AppState>();
-    _hostCtrl = TextEditingController(text: state.brokerHost);
-    _portCtrl = TextEditingController(text: state.brokerPort.toString());
-    _clientIdCtrl = TextEditingController(text: state.clientId);
-    _userCtrl = TextEditingController(text: state.username);
-    _passCtrl = TextEditingController(text: state.password);
     _longPressCtrl =
         TextEditingController(text: state.longPressSeconds.toString());
   }
 
   @override
   void dispose() {
-    _hostCtrl.dispose();
-    _portCtrl.dispose();
-    _clientIdCtrl.dispose();
-    _userCtrl.dispose();
-    _passCtrl.dispose();
     _longPressCtrl.dispose();
     super.dispose();
   }
 
   void _save() {
-    final port = int.tryParse(_portCtrl.text) ?? 1883;
-    final longPress = int.tryParse(_longPressCtrl.text) ?? 5;
-    context.read<AppState>().updateBrokerSettings(
-          host: _hostCtrl.text.trim(),
-          port: port,
-          id: _clientIdCtrl.text.trim(),
-          user: _userCtrl.text.trim(),
-          pass: _passCtrl.text,
-          longPress: longPress,
-        );
+    final longPress = int.tryParse(_longPressCtrl.text) ?? 2;
+    context.read<AppState>().updateSettings(longPress: longPress);
     Navigator.pop(context);
   }
 
+  void _open(Widget screen) => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => screen),
+      );
+
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Configuration MQTT'),
+        title: const Text('Paramètres'),
         backgroundColor: Colors.black87,
         foregroundColor: Colors.white,
         actions: [
@@ -74,35 +58,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _section('Broker'),
-          _field(_hostCtrl, 'Adresse IP / Hostname', Icons.router,
-              hint: '192.168.1.100'),
-          _field(_portCtrl, 'Port', Icons.numbers,
-              hint: '1883', keyboardType: TextInputType.number),
-          _field(_clientIdCtrl, 'Client ID', Icons.badge,
-              hint: 'flutter_controller_01'),
-          const SizedBox(height: 16),
-          _section('Authentification (optionnel)'),
-          _field(_userCtrl, 'Nom d\'utilisateur', Icons.person),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TextField(
-              controller: _passCtrl,
-              obscureText: _obscurePass,
-              decoration: InputDecoration(
-                labelText: 'Mot de passe',
-                prefixIcon: const Icon(Icons.lock),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscurePass
-                      ? Icons.visibility
-                      : Icons.visibility_off),
-                  tooltip: _obscurePass ? 'Afficher' : 'Masquer',
-                  onPressed: () =>
-                      setState(() => _obscurePass = !_obscurePass),
-                ),
-                border: const OutlineInputBorder(),
-              ),
-            ),
+          _section('Module BedCtrl (Bluetooth)'),
+          ListTile(
+            leading: const Icon(Icons.bluetooth),
+            title: Text(state.hasDevice ? state.deviceName : 'Aucun module'),
+            subtitle: Text(state.statusMessage),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _open(const DeviceScanScreen()),
+          ),
+          ListTile(
+            leading: const Icon(Icons.tune),
+            title: const Text('Configuration du module'),
+            subtitle: const Text('WiFi, nom, lumière, portail web'),
+            trailing: const Icon(Icons.chevron_right),
+            enabled: state.isConnected,
+            onTap: () => _open(const ModuleConfigScreen()),
           ),
           const SizedBox(height: 16),
           _section('Commandes'),
@@ -113,7 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SwitchListTile(
             title: const Text('Thème sombre'),
             secondary: const Icon(Icons.dark_mode),
-            value: context.watch<AppState>().isDark,
+            value: state.isDark,
             onChanged: context.read<AppState>().setDarkMode,
           ),
           const SizedBox(height: 24),
@@ -146,14 +116,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String label,
     IconData icon, {
     String hint = '',
-    bool obscure = false,
     TextInputType keyboardType = TextInputType.text,
   }) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: TextField(
           controller: ctrl,
-          obscureText: obscure,
           keyboardType: keyboardType,
           decoration: InputDecoration(
             labelText: label,

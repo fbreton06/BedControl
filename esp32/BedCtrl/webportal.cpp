@@ -80,13 +80,6 @@ static const char PAGE_AP[] PROGMEM = R"rawliteral(
         <label>Nom du device (hostname)</label>
         <input type="text" id="hostname" placeholder="warm_test" value="%HOSTNAME%">
 
-        <!-- MQTT -->
-        <div class="section">
-            <h2 style="font-size:1rem;color:#90caf9;margin-bottom:4px">📡 Broker MQTT</h2>
-            <label>Adresse</label>
-            <input type="text" id="mqtt_host" value="%MQTT_HOST%">
-        </div>
-
         <!-- Watchdog -->
         <div class="section">
             <h2 style="font-size:1rem;color:#90caf9;margin-bottom:4px">⏱️ Watchdog</h2>
@@ -104,7 +97,6 @@ static const char PAGE_AP[] PROGMEM = R"rawliteral(
             wifi_ssid: document.getElementById('wifi_ssid').value,
             wifi_pass: document.getElementById('wifi_pass').value,
             hostname: document.getElementById('hostname').value,
-            mqtt_host: document.getElementById('mqtt_host').value,
             wdt_s: parseInt(document.getElementById('wdt_s').value)
         };
         let status = document.getElementById('cfg-status');
@@ -155,28 +147,6 @@ static const char PAGE_PORTAL[] PROGMEM = R"rawliteral(
             <button class="btn btn-success" onclick="uploadFirmware()">⬆️ Flasher</button>
         </div>
 
-        <!-- MQTT -->
-        <div class="section">
-            <h2 style="font-size:1rem;color:#90caf9;margin-bottom:4px">📡 Broker MQTT</h2>
-            <label>Adresse</label>
-            <input type="text" id="mqtt_host" value="%MQTT_HOST%">
-            <div class="row">
-                <div>
-                    <label>Port</label>
-                    <input type="number" id="mqtt_port" min="1" max="65535" value="%MQTT_PORT%">
-                </div>
-                <div>
-                    <label>Utilisateur</label>
-                    <input type="text" id="mqtt_user" value="%MQTT_USER%">
-                </div>
-            </div>
-            <label>Mot de passe MQTT</label>
-            <div class="pw-wrap">
-                <input type="password" id="mqtt_pass" placeholder="•••• inchangé si vide ••••">
-                <button type="button" class="pw-eye" onclick="togglePw(this)" title="Afficher">👁️</button>
-            </div>
-        </div>
-
         <!-- Lumière -->
         <div class="section">
             <h2 style="font-size:1rem;color:#90caf9;margin-bottom:4px">💡 Lumière</h2>
@@ -190,7 +160,7 @@ static const char PAGE_PORTAL[] PROGMEM = R"rawliteral(
         <!-- Reset -->
         <div class="section">
             <h2 style="font-size:1rem;color:#ef9a9a;margin-bottom:8px">⚠️ Réinitialisation</h2>
-            <p style="font-size:.82rem;color:#7b8fa1;margin-bottom:12px">Efface tous les paramètres en flash et redémarre en mode AP.</p>
+            <p style="font-size:.82rem;color:#7b8fa1;margin-bottom:12px">Efface tous les paramètres en flash et redémarre (WiFi coupé, reconfiguration via l'appli en Bluetooth).</p>
             <button class="btn btn-danger" onclick="confirmReset()">🗑️ Effacer et réinitialiser</button>
         </div>
     </div>
@@ -225,11 +195,7 @@ static const char PAGE_PORTAL[] PROGMEM = R"rawliteral(
 
     function saveConfig() {
         var data = {
-              light_delay: parseInt(document.getElementById('light_delay').value),
-              mqtt_host: document.getElementById('mqtt_host').value,
-              mqtt_port: parseInt(document.getElementById('mqtt_port').value),
-              mqtt_user: document.getElementById('mqtt_user').value,
-              mqtt_pass: document.getElementById('mqtt_pass').value
+              light_delay: parseInt(document.getElementById('light_delay').value)
         };
         let status = document.getElementById('cfg-status');
         fetch('/save-config', {   method: 'POST',
@@ -242,7 +208,7 @@ static const char PAGE_PORTAL[] PROGMEM = R"rawliteral(
     }
 
     function confirmReset() {
-        if (confirm('Effacer toute la configuration et redémarrer en mode AP ?')) {
+        if (confirm('Effacer toute la configuration et redémarrer ?')) {
             fetch('/reset',{method:'POST'}).then(() => {
                 document.getElementById('cfg-status').textContent='Réinitialisation en cours…';
             });
@@ -264,7 +230,6 @@ static String build_ap_page(void) {
     String full = FPSTR(PAGE_AP);
     full.replace("%STYLE%", page);
     full.replace("%HOSTNAME%", g_config.hostname);
-    full.replace("%MQTT_HOST%", g_config.mqtt_host);
     full.replace("%WDT_S%",     String(g_config.wdt_s));
     return full;
 }
@@ -277,9 +242,6 @@ static String build_portal_page(void) {
     full.replace("%HOSTNAME%",  g_config.hostname);
     full.replace("%IP_ADDR%",   wifi_get_ip_address());
     full.replace("%VERSION%",   VERSION);
-    full.replace("%MQTT_HOST%", g_config.mqtt_host);
-    full.replace("%MQTT_PORT%", String(g_config.mqtt_port));
-    full.replace("%MQTT_USER%", g_config.mqtt_user);
     full.replace("%LIGHT_DELAY%", String(g_config.light_delay));
     return full;
 }
@@ -442,7 +404,7 @@ static void setup_ap_routes(void) {
         server->send(200, "text/html", build_ap_page());
     });
 
-    // Save WIFI station SSI / WIFI station password / MQTT broker address / hostname and reboot
+    // Save WIFI station SSID / WIFI station password / hostname and reboot
     server->on("/save-wifi", HTTP_POST, []() {
 
         if (!server->hasArg("plain")) {
@@ -450,54 +412,12 @@ static void setup_ap_routes(void) {
             server->send(400, "text/plain", "Body manquant");
             return;
         }
-        String body = server->arg("plain");
+        // Même parseur que le service BLE (config.cpp)
+        String error;
+        if (!config_update_from_json(server->arg("plain"), error)) {
 
-        JsonDocument doc;
-        //Serial.println("body=" + body);
-        DeserializationError err = deserializeJson(doc, body);
-        if (err) {
-
-            Serial.println("err");
-            server->send(400, "text/plain", "JSON invalide");
+            server->send(400, "text/plain", error);
             return;
-        }
-        if (doc.containsKey("wifi_ssid")) {
-
-            String wifi_ssid = doc["wifi_ssid"].as<String>();
-            Serial.println("SSID: " + wifi_ssid);
-            if (wifi_ssid.isEmpty()) {
-
-                server->send(400, "text/plain", "SSID requis");
-                return;
-            }
-            g_config.wifi_ssid = wifi_ssid;
-        }
-        if (doc.containsKey("wifi_pass")) {
-
-            g_config.wifi_pass = doc["wifi_pass"].as<String>();
-        }
-        if (doc.containsKey("hostname")) {
-
-            String hostname = doc["hostname"].as<String>();
-            Serial.println("Host name: " + hostname);
-            if (!hostname.isEmpty()) {
-
-                g_config.hostname = hostname;
-            }
-        }
-        if (doc.containsKey("mqtt_host") && !doc["mqtt_host"].as<String>().isEmpty()) {
-
-            g_config.mqtt_host = doc["mqtt_host"].as<String>();
-            Serial.println("MQTT host: " + g_config.mqtt_host);
-        }
-        if (doc.containsKey("wdt_s")) {
-
-            uint value = doc["wdt_s"].as<uint>();
-            if (value >= 3 && value <= 300) {
-
-                g_config.wdt_s = value;
-            }
-            Serial.println("WDT(s): " + g_config.wdt_s);
         }
         config_save();
         server->send(200, "text/plain", "✅ Saved — restart in 2s…");
@@ -526,7 +446,7 @@ static void setup_portal_routes(void) {
     // OTA
     server->on("/update", HTTP_POST, route_ota_post, route_ota_upload);
 
-    // Sauvegarde config (WDT, MQTT)
+    // Sauvegarde config (lumière, mot de passe WiFi)
     server->on("/save-config", HTTP_POST, []() {
 
         if (!server->hasArg("plain")) {
@@ -546,31 +466,6 @@ static void setup_portal_routes(void) {
         }
 
         bool changed = false;
-        if (doc.containsKey("mqtt_host") && !doc["mqtt_host"].as<String>().isEmpty()) {
-
-            g_config.mqtt_host = doc["mqtt_host"].as<String>();
-            changed = true;
-        }
-        if (doc.containsKey("mqtt_port")) {
-
-            uint value = doc["mqtt_port"].as<uint>();
-            if (value > 0 && value < 65536) {
-
-                g_config.mqtt_port = value;
-                changed = true;
-            }
-        }
-        if (doc.containsKey("mqtt_user")) {
-
-            g_config.mqtt_user = doc["mqtt_user"].as<String>();
-            changed = true;
-        }
-        // Password update only if non-empty
-        if (doc.containsKey("mqtt_pass") && !doc["mqtt_pass"].as<String>().isEmpty()) {
-
-            g_config.mqtt_pass = doc["mqtt_pass"].as<String>();
-            changed = true;
-        }
         // Password update only if non-empty
         if (doc.containsKey("wifi_pass") && !doc["wifi_pass"].as<String>().isEmpty()) {
 

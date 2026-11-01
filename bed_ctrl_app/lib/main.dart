@@ -7,13 +7,13 @@ void main() {
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),
-      child: const MqttApp(),
+      child: const BedApp(),
     ),
   );
 }
 
-class MqttApp extends StatelessWidget {
-  const MqttApp({super.key});
+class BedApp extends StatelessWidget {
+  const BedApp({super.key});
 
   @override
   Widget build(BuildContext context) {

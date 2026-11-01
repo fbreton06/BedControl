@@ -2,7 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app_state.dart';
-import 'mqtt_service.dart';
+import 'ble_service.dart';
+import 'device_scan_screen.dart';
 import 'settings_screen.dart';
 
 class BedControlScreen extends StatelessWidget {
@@ -49,10 +50,8 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (_, state, __) {
-        final connected =
-            state.connectionState == AppMqttConnectionState.connected;
-        final connecting =
-            state.connectionState == AppMqttConnectionState.connecting;
+        final connected = state.connectionState == BleLinkState.connected;
+        final connecting = state.connectionState == BleLinkState.connecting;
 
         final dark = Theme.of(context).brightness == Brightness.dark;
         final Color ledColor = connected
@@ -77,19 +76,28 @@ class _Header extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Voyant connexion — tap pour (dé)connecter
+                  // Voyant liaison Bluetooth — tap pour (dé)connecter,
+                  // ou choisir le module si aucun n'est mémorisé
                   Tooltip(
-                    message: connected
-                        ? 'Connecté — toucher pour déconnecter'
-                        : connecting
-                            ? 'Connexion...'
-                            : 'Déconnecté — toucher pour connecter',
+                    message: !state.hasDevice
+                        ? 'Aucun module — toucher pour en choisir un'
+                        : connected
+                            ? 'Connecté — toucher pour déconnecter'
+                            : connecting
+                                ? 'Connexion...'
+                                : 'Déconnecté — toucher pour connecter',
                     child: GestureDetector(
-                      onTap: connecting
-                          ? null
-                          : connected
-                              ? state.disconnect
-                              : state.connect,
+                      onTap: !state.hasDevice
+                          ? () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const DeviceScanScreen()),
+                              )
+                          : connecting
+                              ? null
+                              : connected
+                                  ? state.disconnect
+                                  : state.connect,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         width: 20,
@@ -169,7 +177,7 @@ class _PartsSelector extends StatelessWidget {
   }
 }
 
-/// Commutateur segmenté générique à 3 positions (aucun MQTT, état seulement).
+/// Commutateur segmenté générique à 3 positions (aucun envoi, état seulement).
 class _SegSelector extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;

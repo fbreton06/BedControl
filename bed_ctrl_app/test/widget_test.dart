@@ -15,7 +15,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider(
         create: (_) => AppState(),
-        child: const MqttApp(),
+        child: const BedApp(),
       ),
     );
     await tester.pump();

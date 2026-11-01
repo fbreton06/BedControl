@@ -12,27 +12,23 @@
 #define CMD_SYNCH_TO_TARGET  BIT(8)
 #define CMD_LIGHT_SWITCH_ON  BIT(9)
 
-static void on_message(void* context, String& sub_topic, String& message) {
+// Commande du lit reçue en BLE (déjà décodée par ble.cpp)
+static void on_message(void* context, JsonDocument& document) {
 
-    JsonDocument document;
-    DeserializationError error = deserializeJson(document, message);
-    if (error) {
-
-        Serial.println("MQTT unexpected message: " + message);
-        Serial.println(error.f_str());
-        return;
-    }
     if (!(document.containsKey("source") && document.containsKey("beds") &&
           document.containsKey("parts") && document.containsKey("push"))) {
 
-        Serial.println("MQTT unsupported message: " + message);
+        Serial.println("BLE unsupported message");
         return;
     }
 
     BedCtrl* bedctrl = (BedCtrl *)context;
     String source = document["source"];
     String push = document["push"];
-    Serial.println("MQTT message: " + message);
+    #if DEBUG_TRACE
+    Serial.println("BLE message: " + source + "/" + document["beds"].as<String>() +
+                   "/" + document["parts"].as<String>() + "/" + push);
+    #endif
     byte bed_mask = 0;
     if ((document["beds"] == "left") || (document["beds"] == "both")) {
 
@@ -142,7 +138,7 @@ static void on_message(void* context, String& sub_topic, String& message) {
                         bedctrl->memory(bed, 2, push == "long");
                     } else {
 
-                        Serial.println("MQTT unsupported source: " + source);
+                        Serial.println("BLE unsupported source: " + source);
                     }
                 }
             }
@@ -150,20 +146,19 @@ static void on_message(void* context, String& sub_topic, String& message) {
     }
 }
 
+// Plus de client BLE : un relâchement de bouton a pu être perdu, on arrête
+// tout plutôt que de laisser un moteur tourner.
+static void on_disconnect(void* context) {
+
+    ((BedCtrl *)context)->stop_all();
+}
+
 BedCtrl::BedCtrl(uint loop_time_ms) {
 
-    if (wifi_setup()) {
-
-        Serial.println("[Setup] AP mode — waiting for WiFi config");
-    } else {
-
-        Serial.println("[Setup] BedCtrl — working...");
-    }
+    // WiFi (portail web) puis BLE (commandes) : le lit fonctionne sans WiFi
+    wifi_setup();
 
     this->loop_time_ms = loop_time_ms;
-
-    // MQTT
-    this->mqtt = mqtt_create(on_message, this);
 
     // App. init.
     for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
@@ -187,6 +182,10 @@ BedCtrl::BedCtrl(uint loop_time_ms) {
         this->leds[bed]->begin();
         this->leds[bed]->show();
     }
+
+    // BLE en dernier : aucune commande ne doit arriver avant l'init des sorties
+    ble_setup(on_message, on_disconnect, this);
+    Serial.println("[Setup] BedCtrl — working...");
 }
 
 void BedCtrl::set_light(byte bed_mask)  {
@@ -284,6 +283,22 @@ bool BedCtrl::stop_synch(byte bed_mask) {
         }
     }
     return stopped;
+}
+
+void BedCtrl::stop_all(void) {
+
+    for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
+
+        for (uint idx = 0 ; idx < NB_IO_PINS ; idx++) {
+
+            digitalWrite(io_pins[bed][idx], HIGH);
+        }
+        // Garde l'éventuel allumage de la lumière en cours
+        this->command[bed] &= CMD_LIGHT_SWITCH_ON;
+        this->head_tgt[bed] = -1;
+        this->foot_tgt[bed] = -1;
+    }
+    Serial.println("All motors stopped");
 }
 
 void BedCtrl::memory(byte bed, uint unit, bool is_long) {
@@ -456,13 +471,11 @@ void BedCtrl::do_command(uint bed) {
 
 void BedCtrl::loop(void) {
 
-    // wifi_loop() returns true in STA mode (app runs), false in AP mode (paused).
-    if (wifi_loop()) {
+    // Commandes BLE reçues depuis le dernier cycle, puis moteurs/lumières
+    ble_loop();
+    for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
 
-        for (uint bed = 0 ; bed < NB_BEDS ; bed++) {
-
-            this->do_command(bed);
-        }
-        this->mqtt->loop();
+        this->do_command(bed);
     }
+    wifi_loop();
 }

@@ -1,19 +1,16 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'mqtt_service.dart';
+import 'ble_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
     _load();
   }
 
-  // ── Configuration broker ──────────────────────────────────────────────
-  String brokerHost = '';
-  int brokerPort = 1883;
-  String clientId = 'flutter_controller_01';
-  String username = '';
-  String password = '';
+  // ── Module BedCtrl choisi (identifiant Bluetooth mémorisé) ────────────
+  String deviceId = '';
+  String deviceName = '';
 
   /// Seuil (en secondes) au-delà duquel un appui M1/M2 est considéré "long".
   int longPressSeconds = 2;
@@ -21,62 +18,73 @@ class AppState extends ChangeNotifier {
   /// Thème sombre (true) ou clair (false).
   bool isDark = false;
 
-  /// Topic sur lequel sont publiées les commandes du lit.
-  static const String commandTopic = 'bedctrl';
+  // ── Liaison BLE ───────────────────────────────────────────────────────
+  BleService? _ble;
+  BleLinkState connectionState = BleLinkState.disconnected;
+  String statusMessage = 'Aucun module choisi';
 
-  // ── Service MQTT ──────────────────────────────────────────────────────
-  MqttService? _mqtt;
-  AppMqttConnectionState connectionState = AppMqttConnectionState.disconnected;
-  String statusMessage = 'Non connecté';
-
-  // ── État des sélecteurs (aucun message MQTT) ──────────────────────────
+  // ── État des sélecteurs (aucun envoi) ─────────────────────────────────
   String beds = 'both'; // 'left' | 'both' | 'right'
   String parts = 'both'; // 'head' | 'both' | 'leg'
 
-  // ── Création du service avec la config courante ───────────────────────
-  MqttService _createService() {
-    final service = MqttService(
-      broker: brokerHost,
-      port: brokerPort,
-      clientId: clientId,
-      username: username.isEmpty ? null : username,
-      password: password.isEmpty ? null : password,
-    );
-    service.onConnectionStateChanged = (state) {
+  bool get hasDevice => deviceId.isNotEmpty;
+  bool get isConnected => connectionState == BleLinkState.connected;
+
+  /// Liaison courante, pour l'écran de configuration du module.
+  BleService? get ble => _ble;
+
+  // ── Connexion ──────────────────────────────────────────────────────────
+  Future<void> connect() async {
+    await _ble?.stop();
+    if (!hasDevice) {
+      _ble = null;
+      statusMessage = 'Aucun module choisi';
+      notifyListeners();
+      return;
+    }
+    final service = BleService(BluetoothDevice.fromId(deviceId));
+    service.onStateChanged = (state) {
       connectionState = state;
       switch (state) {
-        case AppMqttConnectionState.connected:
-          statusMessage = 'Connecté à $brokerHost';
+        case BleLinkState.connected:
+          statusMessage = 'Connecté à $deviceName';
           break;
-        case AppMqttConnectionState.connecting:
+        case BleLinkState.connecting:
           statusMessage = 'Connexion en cours...';
           break;
-        case AppMqttConnectionState.disconnected:
-          statusMessage = 'Déconnecté';
-          break;
-        case AppMqttConnectionState.error:
-          statusMessage = 'Erreur : ${service.lastError}';
+        case BleLinkState.disconnected:
+          statusMessage = service.lastError.isEmpty
+              ? 'Déconnecté'
+              : 'Erreur : ${service.lastError}';
           break;
       }
       notifyListeners();
     };
-    return service;
+    _ble = service;
+    service.start();
   }
 
-  // ── Connexion ──────────────────────────────────────────────────────────
-  Future<void> connect() async {
-    _mqtt?.disconnect();
-    _mqtt = _createService();
-    await _mqtt!.connect();
+  Future<void> disconnect() async {
+    await _ble?.stop();
     notifyListeners();
   }
 
-  void disconnect() {
-    _mqtt?.disconnect();
+  /// Module choisi dans la liste du scan : mémorisé puis connecté.
+  Future<void> selectDevice(String id, String name) async {
+    deviceId = id;
+    deviceName = name;
+    await _save();
+    await connect();
+  }
+
+  /// Nom affiché après un changement de hostname (l'identifiant ne change pas).
+  void renameDevice(String name) {
+    deviceName = name;
+    _save();
     notifyListeners();
   }
 
-  // ── Sélecteurs d'état (pas de publication) ────────────────────────────
+  // ── Sélecteurs d'état (pas d'envoi) ───────────────────────────────────
   void setBeds(String value) {
     beds = value;
     notifyListeners();
@@ -97,64 +105,39 @@ class AppState extends ChangeNotifier {
   /// [source] : 'up','down','same','flat','light','m1','m2'
   /// [push]   : 'on'/'off' (maintien) ou 'short'/'long' (mémoire)
   void sendCommand(String source, String push) {
-    final payload = jsonEncode({
+    _ble?.sendCommand({
       'source': source,
       'beds': beds,
       'parts': parts,
       'push': push,
     });
-    _mqtt?.publish(commandTopic, payload);
   }
 
   // ── Paramètres ──────────────────────────────────────────────────────────
-  void updateBrokerSettings({
-    required String host,
-    required int port,
-    required String id,
-    required String user,
-    required String pass,
-    required int longPress,
-  }) {
-    brokerHost = host;
-    brokerPort = port;
-    clientId = id;
-    username = user;
-    password = pass;
+  void updateSettings({required int longPress}) {
     longPressSeconds = longPress;
     _save();
-    // Déconnecter si connecté — l'utilisateur devra reconnecter
-    if (_mqtt?.isConnected == true) {
-      _mqtt!.disconnect();
-    }
     notifyListeners();
   }
-
-  bool get isConnected => _mqtt?.isConnected ?? false;
 
   // ── Persistance (shared_preferences) ──────────────────────────────────
   Future<void> _load() async {
     final p = await SharedPreferences.getInstance();
-    brokerHost = p.getString('brokerHost') ?? brokerHost;
-    brokerPort = p.getInt('brokerPort') ?? brokerPort;
-    clientId = p.getString('clientId') ?? clientId;
-    username = p.getString('username') ?? username;
-    password = p.getString('password') ?? password;
+    deviceId = p.getString('deviceId') ?? deviceId;
+    deviceName = p.getString('deviceName') ?? deviceName;
     longPressSeconds = p.getInt('longPressSeconds') ?? longPressSeconds;
     isDark = p.getBool('isDark') ?? isDark;
     notifyListeners();
-    // Connexion automatique dès qu'un broker est configuré.
-    if (brokerHost.isNotEmpty) {
+    // Connexion automatique dès qu'un module est mémorisé.
+    if (hasDevice) {
       connect();
     }
   }
 
   Future<void> _save() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString('brokerHost', brokerHost);
-    await p.setInt('brokerPort', brokerPort);
-    await p.setString('clientId', clientId);
-    await p.setString('username', username);
-    await p.setString('password', password);
+    await p.setString('deviceId', deviceId);
+    await p.setString('deviceName', deviceName);
     await p.setInt('longPressSeconds', longPressSeconds);
     await p.setBool('isDark', isDark);
   }
